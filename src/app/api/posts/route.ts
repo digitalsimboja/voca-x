@@ -42,6 +42,8 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    console.log('Post created:', post);
+
     return NextResponse.json({ post });
   } catch (error) {
     console.error('Error creating post:', error);
