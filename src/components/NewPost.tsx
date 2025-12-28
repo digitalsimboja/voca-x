@@ -3,19 +3,7 @@
 import { useSession } from "next-auth/react";
 import { ChangeEvent, useRef, useState, useEffect } from "react";
 import { HiOutlinePhotograph } from "react-icons/hi";
-import {
-  getDownloadURL,
-  getStorage,
-  ref,
-  uploadBytesResumable,
-} from "firebase/storage";
-import { app } from "@/firebase";
-import {
-  addDoc,
-  collection,
-  getFirestore,
-  serverTimestamp,
-} from "firebase/firestore";
+import { supabase } from "@/lib/supabase";
 import Image from "next/image";
 
 const NewPost: React.FC = () => {
@@ -25,7 +13,6 @@ const NewPost: React.FC = () => {
   const [uploading, setUploading] = useState<boolean>(false);
   const [text, setText] = useState("");
   const [posting, setPosting] = useState(false);
-  const db = getFirestore(app);
 
   const imagePickRef = useRef<HTMLInputElement>(null);
 
@@ -37,61 +24,77 @@ const NewPost: React.FC = () => {
     }
   };
 
-  const uploadImageToStorage = () => {
+  const uploadImageToStorage = async () => {
     if (!selectedFile) {
       console.error("No file selected for upload.");
       return;
     }
 
-    setUploading(true);
-    const storage = getStorage(app);
-    const fileName = new Date().getTime() + "-" + selectedFile.name;
-    const storageRef = ref(storage, `images/${fileName}`);
-    const uploadTask = uploadBytesResumable(storageRef, selectedFile);
+    if (!supabase) {
+      console.warn("Supabase not configured - skipping image upload");
+      setImageFileUrl(URL.createObjectURL(selectedFile));
+      setUploading(false);
+      return;
+    }
 
-    uploadTask.on(
-      "state_changed",
-      (snapshot) => {
-        const progress =
-          (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        console.log("Upload is " + progress + "% done");
-      },
-      (error) => {
-        // Handle unsuccessful uploads
+    setUploading(true);
+    const fileName = new Date().getTime() + "-" + selectedFile.name;
+
+    try {
+      const { data, error } = await supabase.storage
+        .from('images')
+        .upload(fileName, selectedFile);
+
+      if (error) {
         console.error("Upload failed", error);
         setUploading(false);
         setImageFileUrl(null);
         setSelectedFile(null);
-      },
-      () => {
-        // Handle successful uploads
-        console.log("Upload successful");
-        getDownloadURL(uploadTask.snapshot.ref).then((downloadURL) => {
-          setImageFileUrl(downloadURL);
-          setUploading(false);
-        });
+        return;
       }
-    );
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('images')
+        .getPublicUrl(fileName);
+
+      setImageFileUrl(publicUrl);
+      setUploading(false);
+    } catch (error) {
+      console.error("Upload failed", error);
+      setUploading(false);
+      setImageFileUrl(null);
+      setSelectedFile(null);
+    }
   };
 
   const handlePostSubmit = async () => {
     setPosting(true);
 
-    const docRef = await addDoc(collection(db, "posts"), {
-      uuid: session?.user.uuid,
-      name: session?.user.name,
-      username: session?.user.username,
-      text,
-      profileImg: session?.user.image,
-      postImg: imageFileUrl,
-      timestamp: serverTimestamp(),
-    });
+    try {
+      const response = await fetch('/api/posts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: text,
+          imageUrl: imageFileUrl,
+        }),
+      });
 
-    setPosting(false);
-    setText("");
-    setImageFileUrl(null);
-    setSelectedFile(null);
-    location.reload();
+      if (!response.ok) {
+        throw new Error('Failed to create post');
+      }
+
+      setText("");
+      setImageFileUrl(null);
+      setSelectedFile(null);
+      location.reload(); // Temporary - should use state management instead
+    } catch (error) {
+      console.error('Error creating post:', error);
+    } finally {
+      setPosting(false);
+    }
   };
 
   useEffect(() => {

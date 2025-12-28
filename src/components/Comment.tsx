@@ -3,18 +3,7 @@
 import { HiDotsHorizontal, HiHeart, HiOutlineHeart } from "react-icons/hi";
 import { CommentProps } from "./Comments";
 import { useEffect, useState } from "react";
-import { Like } from "./Icons";
 import { signIn, useSession } from "next-auth/react";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getFirestore,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
-import { app } from "@/firebase";
 
 export default function Comment({
   comment,
@@ -23,67 +12,38 @@ export default function Comment({
   comment: CommentProps;
   postId: string;
 }) {
-  const [likes, setLikes] = useState<Like[]>([]);
   const [isLiked, setIsLiked] = useState(false);
+  const [likesCount, setLikesCount] = useState(comment.likes || 0);
   const { data: session } = useSession();
-  const db = getFirestore(app);
 
-  const likePost = async () => {
-    if (session) {
-      if (isLiked) {
-        await deleteDoc(
-          doc(
-            db,
-            "posts",
-            postId,
-            "comments",
-            comment.id,
-            "likes",
-            session.user.uuid
-          )
-        );
-      } else {
-        await setDoc(
-          doc(
-            db,
-            "posts",
-            postId,
-            "comments",
-            comment.id,
-            "likes",
-            session.user.uuid
-          ),
-          {
-            username: session.user.username,
-            timestamp: serverTimestamp(),
-          }
-        );
-      }
-    } else {
+  const likeComment = async () => {
+    if (!session) {
       signIn();
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/posts/${comment.id}/like`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setIsLiked(result.action === 'liked');
+        // Update likes count
+        const likesResponse = await fetch(`/api/posts/${comment.id}/like`);
+        if (likesResponse.ok) {
+          const likesData = await likesResponse.json();
+          setLikesCount(likesData.likes);
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
     }
   };
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "posts", postId, "comments", comment.id, "likes"),
-      (snapshot) => {
-        const likesData: Like[] = snapshot.docs.map((doc) => ({
-          username: doc.data().username,
-          timestamp: doc.data().timestamp,
-        }));
-        setLikes(likesData);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [db, postId]);
-
-  useEffect(() => {
-    setIsLiked(
-      likes.findIndex((like) => like.username === session?.user.username) !== -1
-    );
-  }, [likes]);
 
   return (
     <div className="flex p-3 border-b border-gray-200 hover:bg-gray-50 pl-10">
@@ -107,18 +67,18 @@ export default function Comment({
         <div className="flex items-center">
           {isLiked ? (
             <HiHeart
-              onClick={likePost}
+              onClick={likeComment}
               className="w-8 h-8 cursor-pointer rounded-full transition duration-500 ease-in-out p-2 text-red-600 hover:text-red-500 hover:bg-red-100"
             />
           ) : (
             <HiOutlineHeart
-              onClick={likePost}
+              onClick={likeComment}
               className="w-8 h-8 cursor-pointer rounded-full transition duration-500 ease-in-out p-2 hover:text-red-500 hover:bg-red-100"
             />
           )}
-          {likes.length > 0 && (
+          {likesCount > 0 && (
             <span className={`${isLiked && "text-red-600"} text-xs`}>
-              {likes.length}
+              {likesCount}
             </span>
           )}
         </div>

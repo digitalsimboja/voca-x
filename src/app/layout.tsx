@@ -1,12 +1,9 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import NewsFeed from "@/components/News";
 import SessionWrapper from "@/components/SessionWrapper";
 import CommentModal from "@/components/CommentModal";
-
-const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Evvecast | Community-Driven Decentralized Social App for the Metaverse",
@@ -24,7 +21,7 @@ export default function RootLayout({
   return (
     <SessionWrapper>
       <html lang="en">
-        <body className={inter.className}>
+        <body className="font-sans">
           <div className="flex justify-between max-w-6xl mx-auto">
             <div className="hidden sm:inline border-r h-screen sticky top-0">
               <Sidebar />

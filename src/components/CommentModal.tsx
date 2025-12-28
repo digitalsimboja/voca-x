@@ -6,18 +6,8 @@ import Modal from "react-modal";
 import { HiX } from "react-icons/hi";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
-import {
-  addDoc,
-  collection,
-  doc,
-  getFirestore,
-  onSnapshot,
-  serverTimestamp,
-} from "firebase/firestore";
-import { app } from "@/firebase";
 import { PostProps } from "./Post";
 import { usePathname, useRouter } from "next/navigation";
-import { error } from "console";
 
 const CommentModal: React.FC = () => {
   const [open, setOpen] = useRecoilState(modalState);
@@ -25,44 +15,68 @@ const CommentModal: React.FC = () => {
   const { data: session } = useSession();
   const [post, setPost] = useState<PostProps | null>(null);
   const [replyText, setReplyText] = useState("");
+  const [loading, setLoading] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
-  const db = getFirestore(app);
 
   useEffect(() => {
     if (postId !== "") {
-      const postRef = doc(db, "posts", postId);
-      const unsubscribe = onSnapshot(postRef, (snapshot) => {
-        if (snapshot.exists()) {
-          setPost(snapshot.data() as PostProps);
-        } else {
-          console.log("No such document!");
+      const fetchPost = async () => {
+        try {
+          const response = await fetch(`/api/posts/${postId}`);
+          if (response.ok) {
+            const data = await response.json();
+            setPost({
+              id: data.post.id,
+              content: data.post.content,
+              author: {
+                id: data.post.author.id,
+                username: data.post.author.username,
+                email: data.post.author.email,
+              },
+              timestamp: data.post.createdAt,
+              likes: data.post.likes?.length || 0,
+              replies: data.post.replies?.length || 0,
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching post:", error);
         }
-      });
-      return () => unsubscribe();
+      };
+      fetchPost();
     }
   }, [postId]);
 
   const handleComment = async () => {
-    // TODO: Define the commentProps before adding to the db
+    if (!replyText.trim()) return;
+
+    setLoading(true);
     try {
-      await addDoc(collection(db, "posts", postId, "comments"), {
-        name: session?.user.name,
-        username: session?.user.username,
-        userImg: session?.user.image,
-        text: replyText,
-        timestamp: serverTimestamp(),
+      const response = await fetch(`/api/posts/${postId}/replies`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: replyText,
+        }),
       });
 
-      setReplyText("");
-      setOpen(false);
+      if (response.ok) {
+        setReplyText("");
+        setOpen(false);
 
-      // Check if the current route is already the post route
-      if (pathname !== `/posts/${postId}`) {
-        router.push(`/posts/${postId}`);
+        // Check if the current route is already the post route
+        if (pathname !== `/posts/${postId}`) {
+          router.push(`/posts/${postId}`);
+        }
+      } else {
+        console.error("Failed to create reply");
       }
     } catch (error) {
       console.error("Error adding a comment", error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -85,19 +99,19 @@ const CommentModal: React.FC = () => {
             <div className="p-2 flex items-center space-x-1 relative">
               <span className="w-0.5 h-full z-[-1] absolute left-8 top-11 bg-gray-300"></span>
               <img
-                src={post?.profileImg as string}
+                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${post?.author.username}`}
                 className="h-11 w-11 rounded-full mr-4"
                 alt="user-img"
               />
               <h4 className="font-bold sm:text-[16px] text-[15px] truncate hover:underline">
-                {post?.name}
+                {post?.author.username}
               </h4>
               <span className="text-sm sm:text-[15px] truncate">
-                @{post?.username}
+                @{post?.author.username}
               </span>
             </div>
-            <p className="text-gray-500 text-[15px] sm:text-[16px ml-16 mb-2]">
-              {post?.text}
+            <p className="text-gray-500 text-[15px] sm:text-[16px] ml-16 mb-2]">
+              {post?.content}
             </p>
 
             <div className="flex p-3 space-x-3">
@@ -119,10 +133,10 @@ const CommentModal: React.FC = () => {
                 <div className="flex items-center justify-end pt-2.5">
                   <button
                     onClick={handleComment}
-                    disabled={replyText.trim() === ""}
+                    disabled={replyText.trim() === "" || loading}
                     className="bg-blue-400 text-white px-4 py-1.5 rounded-full font-bold shadow-md hover:brightness-95 disabled:opacity-50"
                   >
-                    Reply
+                    {loading ? "Replying..." : "Reply"}
                   </button>
                 </div>
               </div>

@@ -1,48 +1,44 @@
 "use client";
 
-import {
-  collection,
-  getFirestore,
-  onSnapshot,
-  orderBy,
-  query,
-} from "firebase/firestore";
-import { Timestamp } from "./Post";
 import { useEffect, useState } from "react";
 import Comment from "./Comment";
-import { app } from "@/firebase";
 
 export interface CommentProps {
   id: string;
   text: string;
   name: string;
-  timestamp: Timestamp;
+  timestamp: {
+    seconds: number;
+    nanoseconds: number;
+  };
   userImg: string;
   username: string;
+  likes?: number;
 }
 
 export default function Comments({ id }: { id: string }) {
   const [comments, setComments] = useState<CommentProps[]>([]);
 
-  const db = getFirestore(app);
-
   useEffect(() => {
-    const q = query(
-      collection(db, "posts", id, "comments"),
-      orderBy("timestamp", "desc")
-    );
+    const fetchComments = async () => {
+      try {
+        const response = await fetch(`/api/posts/${id}/replies`);
+        if (response.ok) {
+          const data = await response.json();
+          setComments(data.replies);
+        }
+      } catch (error) {
+        console.error('Error fetching comments:', error);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const commentsData = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as CommentProps[];
+    fetchComments();
 
-      setComments(commentsData);
-    });
+    // Poll for new comments every 5 seconds
+    const interval = setInterval(fetchComments, 5000);
 
-    return () => unsubscribe();
-  }, [db, id]);
+    return () => clearInterval(interval);
+  }, [id]);
 
   return (
     <div>

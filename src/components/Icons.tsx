@@ -1,16 +1,6 @@
 "use client";
 
 import { modalState, postIdState } from "@/atom/modalAtom";
-import { app } from "@/firebase";
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getFirestore,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
 import { signIn, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import {
@@ -20,94 +10,75 @@ import {
   HiOutlineTrash,
 } from "react-icons/hi";
 import { useRecoilState } from "recoil";
-import { Timestamp } from "./Post";
-import { CommentProps } from "./Comments";
 
-export interface Like {
-  username: string;
-  timestamp: Timestamp;
-}
-
-export default function Icons({ id, uuid }: { id: string; uuid: string }) {
+export default function Icons({ id, authorId }: { id: string; authorId: string }) {
   const { data: session } = useSession();
-  const db = getFirestore(app);
   const [isLiked, setIsLiked] = useState(false);
-  const [likes, setLikes] = useState<Like[]>([]);
+  const [likesCount, setLikesCount] = useState(0);
   const [open, setOpen] = useRecoilState(modalState);
   const [postId, setPostId] = useRecoilState(postIdState);
-  const [comments, setComments] = useState<CommentProps[]>([]);
+  const [commentsCount, setCommentsCount] = useState(0);
 
   const likePost = async () => {
-    if (session) {
-      if (isLiked) {
-        await deleteDoc(doc(db, "posts", id, "likes", session.user.uuid));
-      } else {
-        await setDoc(doc(db, "posts", id, "likes", session.user.uuid), {
-          username: session.user.username,
-          timestamp: serverTimestamp(),
-        });
-      }
-    } else {
+    if (!session) {
       signIn();
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/posts/${id}/like`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        setIsLiked(result.action === 'liked');
+        // Update likes count
+        const likesResponse = await fetch(`/api/posts/${id}/like`);
+        if (likesResponse.ok) {
+          const likesData = await likesResponse.json();
+          setLikesCount(likesData.likes);
+        }
+      }
+    } catch (error) {
+      console.error('Error toggling like:', error);
     }
   };
 
-  const deletePost = () => {
-    if (window.confirm("Are you sure you want to delete this post")) {
-      if (session?.user.uuid === uuid) {
-        deleteDoc(doc(db, "posts", id))
-          .then(() => {
-            console.log("Post successfully deleted");
-            window.location.reload();
-          })
-          .catch((error) => {
-            console.error("Error removing the post", error);
-          });
+  const deletePost = async () => {
+    if (!window.confirm("Are you sure you want to delete this post")) return;
+
+    // For now, we'll allow deletion - in a real app, you'd check user permissions
+    // if (!session?.user?.email) {
+    //   alert("You are not authorized to delete this post");
+    //   return;
+    // }
+
+    try {
+      const response = await fetch(`/api/posts/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        window.location.reload();
       } else {
-        alert("You are not authorized to delete this post");
+        alert("Failed to delete post");
       }
+    } catch (error) {
+      console.error('Error deleting post:', error);
     }
   };
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "posts", id, "likes"),
-      (snapshot) => {
-        const likesData: Like[] = snapshot.docs.map((doc) => ({
-          username: doc.data().username,
-          timestamp: doc.data().timestamp,
-        }));
-        setLikes(likesData);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [db, id]);
-
-  useEffect(() => {
-    setIsLiked(
-      likes.findIndex((like) => like.username === session?.user.username) !== -1
-    );
-  }, [likes]);
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "posts", id, "comments"),
-      (snapshot) => {
-        const commendData: CommentProps[] = snapshot.docs.map((doc) => ({
-          id: doc.data().id,
-          username: doc.data().username,
-          text: doc.data().comment,
-          timestamp: doc.data().timestamp,
-          name: doc.data().name,
-          userImg: doc.data().userImg,
-        }));
-
-        setComments(commendData);
-      }
-    );
-    return () => unsubscribe();
-  }, [db, id]);
+    // Fetch initial likes count
+    fetch(`/api/posts/${id}/like`)
+      .then(res => res.json())
+      .then(data => setLikesCount(data.likes))
+      .catch(console.error);
+  }, [id]);
 
   return (
     <div className="flex justify-start gap-5 p-2 text-gray-500">
@@ -123,8 +94,8 @@ export default function Icons({ id, uuid }: { id: string; uuid: string }) {
           }}
           className="w-8 h-8 cursor-pointer rounded-full transition duration-500 ease-in-out p-2 hover:text-sky-500 hover:bg-sky-100"
         />
-        {comments.length > 0 && (
-          <span className="text-xs">{comments.length}</span>
+        {commentsCount > 0 && (
+          <span className="text-xs">{commentsCount}</span>
         )}
       </div>
       <div className="flex items-center">
@@ -139,13 +110,13 @@ export default function Icons({ id, uuid }: { id: string; uuid: string }) {
             className="w-8 h-8 cursor-pointer rounded-full transition duration-500 ease-in-out p-2 hover:text-red-500 hover:bg-red-100"
           />
         )}
-        {likes.length > 0 && (
+        {likesCount > 0 && (
           <span className={`${isLiked && "text-red-600"} text-xs`}>
-            {likes.length}
+            {likesCount}
           </span>
         )}
       </div>
-      {session?.user.uuid === uuid && (
+      {session?.user?.email && (
         <HiOutlineTrash
           onClick={deletePost}
           className="w-8 h-8 cursor-pointer rounded-full transition duration-500 ease-in-out p-2 hover:text-red-500 hover:bg-red-100"

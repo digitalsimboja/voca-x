@@ -7,7 +7,8 @@ export const config = {
         url: process.env.NEXTAUTH_URL,
         secret: process.env.NEXTAUTH_SECRET
     },
-    firebase: {
-        apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    supabase: {
+        url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     }
 }
